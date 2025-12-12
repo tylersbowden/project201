@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wisdom Catch</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the Canvas and body */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f3e8; /* Light parchment/cream background */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #gameCanvas {
+            border: 4px solid #38a169; /* Green border for the game area */
+            background-color: #e0f2f1; /* Very light teal/mint background */
+            border-radius: 12px;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+            touch-action: none; /* Prevent default touch behavior on canvas */
+        }
+
+        .game-ui {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .strikes {
+            font-size: 1.5rem;
+            color: #ef4444; /* Red for strikes */
+        }
+        a{
+            color: blue !important;
+            font-weight: bold !important;
+            text-decoration: underline !important;
+        }
+    </style>
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth;
+        let currentUserId = null;
+
+        // Global score variable and update function
+        window.highScore = 0;
+        window.updateHighScoreDisplay = () => {
+             const highscoreEl = document.getElementById('highScore');
+             if (highscoreEl) {
+                highscoreEl.textContent = window.highScore;
+             }
+        };
+
+        const initFirebase = async () => {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing. High scores will not be saved.");
+                return;
+            }
+
+            // setLogLevel('debug');
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            // 1. Authenticate user
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Authentication failed:", error);
+                // Fallback to anonymous sign-in if custom token fails
+                try {
+                    await signInAnonymously(auth);
+                } catch (anonError) {
+                    console.error("Anonymous sign-in also failed:", anonError);
+                }
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUserId = user.uid;
+                    document.getElementById('userIdDisplay').textContent = currentUserId;
+                    console.log("Authenticated user ID:", currentUserId);
+                    setupHighScoreListener();
+                } else {
+                    currentUserId = null;
+                    document.getElementById('userIdDisplay').textContent = "Not Signed In";
+                    console.log("User signed out or failed to sign in.");
+                }
+            });
+        };
+
+        const getHighScoreDocRef = () => {
+            if (!db || !currentUserId) return null;
+            // Public collection to store high scores for the game
+            const path = `/artifacts/${appId}/public/data/wordOfWisdomScores/globalHighScores`;
+            return doc(db, path);
+        };
+
+        // 2. Setup real-time listener for the global high score
+        const setupHighScoreListener = () => {
+            const docRef = getHighScoreDocRef();
+            if (!docRef) return;
+
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    window.highScore = data.score || 0;
+                    window.updateHighScoreDisplay();
+                    console.log("High Score updated from Firestore:", window.highScore);
+                } else {
+                    console.log("No global high score document found. Creating a placeholder.");
+                    // Initialize if not exists
+                    window.highScore = 0;
+                    updateHighScoreInFirestore(0);
+                }
+            }, (error) => {
+                console.error("Error listening to high score:", error);
+            });
+        };
+
+        // 3. Function to update the high score if a new one is achieved
+        window.updateHighScoreInFirestore = async (newScore) => {
+            if (!db || !currentUserId) {
+                console.warn("Firestore not initialized or user not authenticated. Cannot save score.");
+                return;
+            }
+
+            if (newScore > window.highScore) {
+                const docRef = getHighScoreDocRef();
+                if (!docRef) return;
+
+                try {
+                    await setDoc(docRef, {
+                        score: newScore,
+                        userId: currentUserId,
+                        timestamp: new Date().toISOString()
+                    }, { merge: true }); // Use merge to avoid overwriting other potential fields
+                    console.log(`New High Score ${newScore} saved to Firestore.`);
+                } catch (e) {
+                    console.error("Error saving document: ", e);
+                }
+            }
+        };
+
+        window.addEventListener('load', initFirebase);
+    </script>
+
+</head>
+<body class="p-4 sm:p-8">
+    <div>
+        <a href="../about.html">About Me</a> 
+        <span>|</span> 
+        <a href="../html/scratch.html">My Interests</a>
+    </div>
+    <div class="game-ui max-w-lg w-full mb-6">
+        <h1 class="text-4xl font-bold text-center text-green-700 mb-2">🌿 Wisdom Catch 🍎</h1>
+        <p class="text-center text-sm text-gray-600 mb-4">Catch the good items, avoid the bad! (Controls: Left/Right Arrow Keys)</p>
+
+        <div class="flex justify-between items-center text-lg font-semibold">
+            <div>Score: <span id="currentScore" class="text-blue-600">0</span></div>
+            <div>High Score: <span id="highScore" class="text-yellow-600">0</span></div>
+        </div>
+        <div class="mt-2 text-center">
+            <div id="strikesDisplay" class="strikes font-extrabold">Strikes: ❤️❤️❤️</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="300" height="500"></canvas>
+
+    <div class="game-ui max-w-lg w-full mt-6 text-sm">
+        <div id="messageBox" class="text-center p-2 font-bold text-lg text-red-700 hidden"></div>
+        <div class="text-xs text-gray-500 mt-2">
+            User ID: <span id="userIdDisplay" class="break-all font-mono">Loading...</span>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Responsive canvas sizing
+        const scaleCanvas = () => {
+            const containerWidth = Math.min(500, window.innerWidth - 40);
+            canvas.width = containerWidth;
+            // Updated: Shorten height further by setting height to 3/5 of the width (aspect ratio 0.6)
+            canvas.height = containerWidth * (3/5); 
+        };
+        scaleCanvas();
+        window.addEventListener('resize', scaleCanvas);
+
+        // Game State Variables
+        let score = 0;
+        let strikes = 3;
+        let gameRunning = false;
+        let fallingItems = [];
+        let gameSpeed = 1; // Base speed multiplier
+
+        // Game UI elements
+        const currentScoreEl = document.getElementById('currentScore');
+        const strikesDisplayEl = document.getElementById('strikesDisplay');
+        const messageBox = document.getElementById('messageBox');
+
+        // Item Definitions (Emoji based on Word of Wisdom principles)
+        const GOOD_ITEMS = [
+            { icon: '🍎', type: 'Good', points: 10, description: 'Fruit' },
+            { icon: '🥦', type: 'Good', points: 10, description: 'Vegetable' },
+            { icon: '🍞', type: 'Good', points: 10, description: 'Bread/Grain' },
+            { icon: '🥩', type: 'Good', points: 10, description: 'Meat (Sparingly)' },
+        ];
+        const BAD_ITEMS = [
+            { icon: '🚬', type: 'Bad', points: 0, description: 'Tobacco' },
+            { icon: '☕', type: 'Bad', points: 0, description: 'Hot Drink (Coffee/Tea)' },
+            { icon: '🍺', type: 'Bad', points: 0, description: 'Strong Drink (Alcohol)' },
+        ];
+        const ALL_ITEMS = [...GOOD_ITEMS, ...BAD_ITEMS];
+        const ITEM_SIZE = 30; // Size of the emoji/hitbox
+
+        // Basket Object
+        const basket = {
+            width: 80,
+            height: 40,
+            x: (canvas.width / 2) - 40,
+            y: canvas.height - 50,
+            speed: 10,
+            dx: 0, // Delta X for movement
+            icon: '🧺' // Basket emoji
+        };
+
+        // --- Helper Functions ---
+
+        /**
+         * Converts the basket's normalized position to actual canvas coordinates
+         */
+        const updateBasketPosition = () => {
+             basket.x = Math.max(0, Math.min(basket.x, canvas.width - basket.width));
+             // Adjust basket Y position based on the new, shorter canvas height
+             basket.y = canvas.height - 50; 
+        }
+
+        /**
+         * Draw the basket on the canvas
+         */
+        function drawBasket() {
+            ctx.font = `${basket.height - 10}px sans-serif`;
+            ctx.fillText(basket.icon, basket.x + (basket.width / 2) - (basket.height / 4), basket.y + basket.height);
+        }
+
+        /**
+         * Draw a falling item (emoji)
+         * @param {object} item - The item object
+         */
+        function drawItem(item) {
+            ctx.font = `${ITEM_SIZE}px sans-serif`;
+            ctx.fillText(item.icon, item.x, item.y);
+            // Draw hitbox outline for debugging (optional)
+            // ctx.strokeStyle = item.type === 'Good' ? 'blue' : 'red';
+            // ctx.strokeRect(item.x, item.y - ITEM_SIZE, ITEM_SIZE, ITEM_SIZE);
+        }
+
+        /**
+         * Generates a new falling item
+         */
+        function createItem() {
+            const itemType = ALL_ITEMS[Math.floor(Math.random() * ALL_ITEMS.length)];
+            const x = Math.random() * (canvas.width - ITEM_SIZE);
+            const y = -ITEM_SIZE; // Start off-screen
+            const dy = (Math.random() * 0.5 + 1) * gameSpeed; // Random vertical speed based on gameSpeed
+
+            fallingItems.push({
+                ...itemType,
+                x: x,
+                y: y,
+                dy: dy,
+                id: Date.now() + Math.random(), // Unique ID
+                collected: false
+            });
+        }
+
+        /**
+         * Updates game state: moves items, checks for collisions, checks for misses
+         */
+        function updateGame() {
+            if (!gameRunning) return;
+
+            // 1. Move Basket
+            basket.x += basket.dx;
+            updateBasketPosition();
+
+            // 2. Move Items and Check for Collisions/Misses
+            for (let i = fallingItems.length - 1; i >= 0; i--) {
+                const item = fallingItems[i];
+                item.y += item.dy;
+
+                // Collision Detection: Check if item is within the basket area
+                // The check for y + ITEM_SIZE > basket.y needs to be slightly adjusted 
+                // because the basket is drawn from the bottom edge of the emoji.
+                const itemHitboxY = item.y - ITEM_SIZE; // Top of the emoji/hitbox
+
+                if (item.y + ITEM_SIZE > basket.y && item.x > basket.x && item.x < basket.x + basket.width) {
+                    handleCollision(item);
+                    fallingItems.splice(i, 1); // Remove collected item
+                    continue;
+                }
+
+                // Miss Detection: Check if item has passed the bottom of the screen
+                if (item.y > canvas.height) {
+                    if (item.type === 'Good') {
+                        // Missed good item - no penalty, just removal
+                        console.log('Missed a good item:', item.description);
+                    } else if (item.type === 'Bad') {
+                        // Bad item missed - no penalty (only penalized when collected)
+                    }
+                    fallingItems.splice(i, 1); // Remove missed item
+                    continue;
+                }
+            }
+
+            // 3. Check Game Over
+            if (strikes <= 0) {
+                gameOver();
+            }
+
+            // Increase difficulty (speed up spawning and movement)
+            gameSpeed = 1 + (score / 300);
+        }
+
+        /**
+         * Handles the result of an item collision with the basket
+         * @param {object} item - The collected item
+         */
+        function handleCollision(item) {
+            if (item.type === 'Good') {
+                score += item.points;
+                currentScoreEl.textContent = score;
+                showMessage(`+${item.points} | Wise choice!`, 'green-600');
+            } else if (item.type === 'Bad') {
+                strikes--;
+                updateStrikesDisplay();
+                showMessage(`-1 Strike | Avoid ${item.description}!`, 'red-600');
+            }
+        }
+
+        /**
+         * Updates the strike hearts display
+         */
+        function updateStrikesDisplay() {
+            const hearts = '❤️'.repeat(strikes) + '🖤'.repeat(3 - strikes);
+            strikesDisplayEl.innerHTML = `Strikes: ${hearts}`;
+        }
+
+        /**
+         * Displays a temporary message on the screen
+         * @param {string} text - The message content
+         * @param {string} color - Tailwind color class (e.g., 'red-600')
+         */
+        function showMessage(text, color) {
+            messageBox.textContent = text;
+            messageBox.className = `text-center p-2 font-bold text-lg text-${color}`;
+            messageBox.style.display = 'block';
+
+            // Hide the message after a short duration
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 750);
+        }
+
+        /**
+         * The main game drawing function
+         */
+        function draw() {
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw all items
+            fallingItems.forEach(drawItem);
+
+            // Draw the basket
+            drawBasket();
+        }
+
+        // --- Game Loop ---
+        let lastItemTime = 0;
+        const itemInterval = 800; // Milliseconds between new item spawns
+
+        function gameLoop(timestamp) {
+            if (!gameRunning) return;
+
+            // Item Spawning
+            if (timestamp - lastItemTime > itemInterval / gameSpeed) {
+                createItem();
+                lastItemTime = timestamp;
+            }
+
+            updateGame();
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Game Flow Control ---
+
+        /**
+         * Starts the game
+         */
+        function startGame() {
+            score = 0;
+            strikes = 3;
+            fallingItems = [];
+            gameRunning = true;
+            gameSpeed = 1;
+            basket.x = (canvas.width / 2) - 40;
+            basket.dx = 0;
+
+            currentScoreEl.textContent = score;
+            updateStrikesDisplay();
+            messageBox.style.display = 'none';
+
+            // Start the loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        /**
+         * Ends the game
+         */
+        function gameOver() {
+            gameRunning = false;
+            // Display game over message
+            messageBox.textContent = `Game Over! Final Score: ${score}. Click/tap to restart.`;
+            messageBox.className = 'text-center p-4 font-extrabold text-2xl text-red-700 bg-red-100 rounded-lg shadow-lg';
+            messageBox.style.display = 'block';
+
+            // Check and update high score (calls the Firestore function from the module script)
+            if (typeof window.updateHighScoreInFirestore === 'function') {
+                window.updateHighScoreInFirestore(score);
+            } else {
+                console.error("Firestore update function not available.");
+            }
+        }
+
+        // --- Event Listeners ---
+
+        // Keyboard controls (Desktop)
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft' || e.key === 'A' || e.key === 'a') {
+                basket.dx = -basket.speed;
+            } else if (e.key === 'ArrowRight' || e.key === 'D' || e.key === 'd') {
+                basket.dx = basket.speed;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'A' || e.key === 'a' || e.key === 'D' || e.key === 'd') {
+                basket.dx = 0;
+            }
+        });
+
+        // Click/Touch to Start/Restart
+        canvas.addEventListener('click', () => {
+            if (!gameRunning) {
+                startGame();
+            }
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            if (!gameRunning) {
+                e.preventDefault();
+                startGame();
+            }
+        });
+
+        // Touch controls (Mobile: tap left/right halves of the screen)
+        canvas.addEventListener('touchmove', (e) => {
+            if (!gameRunning) return;
+            e.preventDefault(); // Prevent scrolling
+            const touchX = e.touches[0].clientX - canvas.offsetLeft;
+            const normalizedX = touchX / canvas.width;
+
+            // Move basket to follow touch x-position
+            basket.x = touchX - (basket.width / 2);
+            updateBasketPosition();
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (!gameRunning) return;
+            // Stop movement when touch ends, though follow logic is smoother
+        });
+
+
+        // Initial setup and instructions
+        window.onload = function() {
+            updateBasketPosition();
+            draw();
+            messageBox.textContent = "Click or tap the game area to start!";
+            messageBox.className = 'text-center p-4 font-extrabold text-2xl text-blue-700 bg-blue-100 rounded-lg shadow-lg';
+            messageBox.style.display = 'block';
+
+            // Ensure high score display is initialized even if Firestore is loading
+            window.updateHighScoreDisplay();
+        };
+
+    </script>   
+</body>
+</html>

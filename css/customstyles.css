@@ -1,0 +1,42 @@
+footer{
+    position: relative;
+    text-align: center;
+    font-style: italic;
+    font-size: 20px;
+    left: 0px;
+    right: 0px;
+    bottom: 0px;
+    height: auto;
+}
+:root {
+    /* 1. Primary Color: Sets the color for .text-primary, .bg-primary, etc. */
+    --bs-primary-rgb: 65, 105, 225; 
+    
+    /* 2. Link Base Color: Sets the color for <a> tags */
+    --bs-link-color-rgb: 65, 105, 225 !important;
+    
+    /* 3. Link Hover Color: Sets the color for <a> tags when hovered */
+    --bs-link-hover-color-rgb: 0, 0, 205;
+    
+}
+a{
+    color: royalblue !important;
+}
+a:hover {
+    color: #0000CD !important; /* Medium Blue */
+}
+.social-icon {
+    /* 1. Set the icon symbol color to white (for the white symbol) */
+    color: #fff !important; 
+    
+    /* 2. Set the background color to Royal Blue */
+    background-color: #4169E1 !important; 
+    
+    /* 3. Set the hover color to the darker blue */
+    /* This changes the background when the mouse is over it */
+    /* Use the CSS variable here for consistency, but use !important if needed */
+}
+.CSFont{
+    color:white !important;
+}
+
